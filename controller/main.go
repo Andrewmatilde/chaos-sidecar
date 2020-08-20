@@ -123,11 +123,16 @@ func main() {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 		}
-		duration, err := strconv.Atoi(r.Form.Get("duration"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		open := r.Form.Get("open")
+		if open == "true" {
+			duration, err := strconv.Atoi(r.Form.Get("duration"))
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			}
+			controller.SetDelay(duration)
+		} else if open == "false" {
+			controller.CanselDelay()
 		}
-		controller.SetDelay(duration)
 		controller.IncVersion()
 		snapshot := controller.GenerateSnapshot()
 		if err := snapshot.Consistent(); err != nil {

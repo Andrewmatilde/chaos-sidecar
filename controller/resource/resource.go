@@ -14,10 +14,11 @@
 package controller
 
 import (
+	"time"
+
 	cf "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/common/fault/v3"
 	hf "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/fault/v3"
 	"github.com/golang/protobuf/ptypes/duration"
-	"time"
 
 	"github.com/golang/protobuf/ptypes"
 
@@ -38,16 +39,22 @@ var (
 	RouteName     = "local_route"
 	ListenerName  = "listener_0"
 	ListenerPort  = 10000
-	UpstreamHost  = "www.baidu.com"
+	UpstreamHost  = "127.0.0.1"
 	UpstreamPort  = 80
 	DelayDuration = 3
 	Version       = 0
+	Delay         = false
 )
 
 func SetDelay(duration int) {
+	Delay = true
 	if duration != 0 {
 		DelayDuration = duration
 	}
+}
+
+func CanselDelay() {
+	Delay = false
 }
 
 func SetUpstream(host string, port int) {
@@ -134,7 +141,7 @@ func makeRoute(routeName string, clusterName string) *route.RouteConfiguration {
 	}
 }
 
-func makeHTTPListener(listenerName string, route string) *listener.Listener {
+func makeDelayHTTPListener(listenerName string, route string) *listener.Listener {
 	// HTTP filter configuration
 	fault := &hf.HTTPFault{
 		Delay: &cf.FaultDelay{
@@ -195,6 +202,52 @@ func makeHTTPListener(listenerName string, route string) *listener.Listener {
 	}
 }
 
+func makeHTTPListener(listenerName string, route string) *listener.Listener {
+	// HTTP filter configuration
+	manager := &hcm.HttpConnectionManager{
+		CodecType:  hcm.HttpConnectionManager_AUTO,
+		StatPrefix: "http",
+		RouteSpecifier: &hcm.HttpConnectionManager_Rds{
+			Rds: &hcm.Rds{
+				ConfigSource:    makeConfigSource(),
+				RouteConfigName: route,
+			},
+		},
+		HttpFilters: []*hcm.HttpFilter{{
+			Name: wellknown.Router,
+		}},
+	}
+
+	pbst, err := ptypes.MarshalAny(manager)
+	if err != nil {
+		panic(err)
+	}
+
+	return &listener.Listener{
+		Name: listenerName,
+		Address: &core.Address{
+			Address: &core.Address_SocketAddress{
+				SocketAddress: &core.SocketAddress{
+					Protocol: core.SocketAddress_TCP,
+					Address:  "0.0.0.0",
+					PortSpecifier: &core.SocketAddress_PortValue{
+						PortValue: uint32(ListenerPort),
+					},
+				},
+			},
+		},
+		FilterChains: []*listener.FilterChain{{
+			Filters: []*listener.Filter{
+				{
+					Name: wellknown.HTTPConnectionManager,
+					ConfigType: &listener.Filter_TypedConfig{
+						TypedConfig: pbst,
+					},
+				}},
+		}},
+	}
+}
+
 func makeConfigSource() *core.ConfigSource {
 	source := &core.ConfigSource{}
 	source.ResourceApiVersion = resource.DefaultAPIVersion
@@ -214,12 +267,24 @@ func makeConfigSource() *core.ConfigSource {
 }
 
 func GenerateSnapshot() cache.Snapshot {
-	return cache.NewSnapshot(
-		string(rune(Version)),
-		[]types.Resource{}, // endpoints
-		[]types.Resource{makeCluster(ClusterName)},
-		[]types.Resource{makeRoute(RouteName, ClusterName)},
-		[]types.Resource{makeHTTPListener(ListenerName, RouteName)},
-		[]types.Resource{}, // runtimes
-	)
+	if Delay {
+		return cache.NewSnapshot(
+			string(rune(Version)),
+			[]types.Resource{}, // endpoints
+			[]types.Resource{makeCluster(ClusterName)},
+			[]types.Resource{makeRoute(RouteName, ClusterName)},
+			[]types.Resource{makeDelayHTTPListener(ListenerName, RouteName)},
+			[]types.Resource{}, // runtimes
+		)
+	} else {
+		return cache.NewSnapshot(
+			string(rune(Version)),
+			[]types.Resource{}, // endpoints
+			[]types.Resource{makeCluster(ClusterName)},
+			[]types.Resource{makeRoute(RouteName, ClusterName)},
+			[]types.Resource{makeHTTPListener(ListenerName, RouteName)},
+			[]types.Resource{}, // runtimes
+		)
+	}
+
 }

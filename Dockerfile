@@ -7,7 +7,7 @@ RUN apt-get update
 COPY envoy/envoy.yaml /etc/envoy/envoy.yaml
 
 RUN mkdir /scr
-COPY ctr /scr/ctr
+COPY controller/ctr /scr/ctr
 COPY sidecar.sh /scr/sidecar.sh
 
 CMD bash /scr/sidecar.sh
